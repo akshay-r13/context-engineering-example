@@ -12,7 +12,7 @@ A langgraph customer support agent with no context engineering principles applie
 """
 
 from pathlib import Path
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.tools import tool
 
 DATA_PATH = Path(__file__).parent / "data"
@@ -40,14 +40,16 @@ You are a helpful AI assistant.
 Answer user questions concisely.
 """
 
-agent = create_react_agent(
+agent = create_agent(
     model="gemini-2.5-flash",
     tools = [],
-    prompt = AGENT_SYSTEM_PROMPT
+    system_prompt = AGENT_SYSTEM_PROMPT
 )
 
-agent.invoke({
+response = agent.invoke({
     "messages": [
         "Hey can you help me?"
     ]
 })
+
+print(response)
