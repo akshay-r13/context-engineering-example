@@ -17,6 +17,18 @@ from langchain_core.tools import tool
 import sqlite3
 from typing import List
 import re
+from phoenix.otel import register
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from openinference.instrumentation import using_session
+import uuid
+
+session_id = str(uuid.uuid4())
+
+tracer_provider = register(
+  project_name="context-engg-naive"
+)
+
+LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
 DATA_PATH = Path(__file__).parent / "data"
 DB_PATH = DATA_PATH / "ecommerce.db"
@@ -44,9 +56,29 @@ def lookup_order(order_id: str) -> dict:
     return tool_result
 
 @tool
-def find_product(query: str):
-    """Find Products from Ecomm Database"""
-    pass
+def find_product(query_term: str) -> List[dict]:
+    """Find Products from Ecomm Database based on a query_term. Term must be 1-2 words"""
+    query_term = f"%{query_term.lower()}%"
+    tool_result = []
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+        find_query = """
+        SELECT * FROM products
+        WHERE
+        LOWER(description) LIKE ?
+        OR 
+        LOWER(name) LIKE ?
+        OR 
+        LOWER (category) LIKE ?
+        OR 
+        LOWER(tags) LIKE ?;
+        """
+        cur.execute(find_query, (query_term, query_term, query_term, query_term,))
+        rows = cur.fetchall()
+        tool_result = [dict(r) for r in rows]
+    return tool_result
+
 
 @tool
 def search_policy(query: str) -> List[str]:
@@ -66,6 +98,7 @@ def search_policy(query: str) -> List[str]:
     top_chunks = list(sorted(chunk_scores, key=lambda x: x[1], reverse=True))[:top_n]
     return "\n-----\n".join([c[0] for c in top_chunks])
 
+tools = [search_policy, find_product, lookup_order]
 
 AGENT_SYSTEM_PROMPT = """
 You are a helpful AI assistant.
@@ -74,18 +107,23 @@ Answer user questions concisely.
 
 agent = create_agent(
     model="gemini-2.5-flash",
-    tools = [],
+    tools = tools,
     system_prompt = AGENT_SYSTEM_PROMPT
 )
 
-response = agent.invoke({
-    "messages": [
-        "Hey can you help me?"
-    ]
-})  
+# response = agent.invoke({
+#     "messages": [
+#         "Hey, my order ID is ORD-48291. When will it arrive and what's your return policy for the items in my order? Also can u list down all the items in my order. I am also looking for headphones"
+#     ]
+# })  
 
-print(response)
-
-print(lookup_order.run(tool_input={"order_id": "ORD-51042"}))
-
-print(search_policy.run(tool_input={"query": "refund return exchange policy"}))
+messages = []
+while True:
+    user_input = input("You: ").strip()
+    if user_input.lower() == "quit":
+        break
+    messages.append({"role": "user", "content": user_input})
+    with using_session(session_id=session_id):
+        response = agent.invoke({"messages": messages})
+    messages = response["messages"]
+    print(f"\nAssistant: {messages[-1].content}\n")
