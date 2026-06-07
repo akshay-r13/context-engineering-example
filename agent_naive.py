@@ -12,23 +12,13 @@ A langgraph customer support agent with no context engineering principles applie
 """
 
 from pathlib import Path
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAI
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 import sqlite3
 from typing import List
 import re
-from phoenix.otel import register
-from openinference.instrumentation.langchain import LangChainInstrumentor
-from openinference.instrumentation import using_session
-import uuid
-
-session_id = str(uuid.uuid4())
-
-tracer_provider = register(
-  project_name="context-engg-naive"
-)
-
-LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+from tabulate import tabulate
 
 DATA_PATH = Path(__file__).parent / "data"
 DB_PATH = DATA_PATH / "ecommerce.db"
@@ -105,25 +95,40 @@ You are a helpful AI assistant.
 Answer user questions concisely.
 """
 
-agent = create_agent(
+model = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
+    temperature=0,
+    thinking_budget= 0,
+    vertexai=True
+)
+
+agent = create_agent(
+    model=model,
     tools = tools,
     system_prompt = AGENT_SYSTEM_PROMPT
 )
 
-# response = agent.invoke({
-#     "messages": [
-#         "Hey, my order ID is ORD-48291. When will it arrive and what's your return policy for the items in my order? Also can u list down all the items in my order. I am also looking for headphones"
-#     ]
-# })  
-
 messages = []
+
+table = []
+
 while True:
     user_input = input("You: ").strip()
     if user_input.lower() == "quit":
         break
     messages.append({"role": "user", "content": user_input})
-    with using_session(session_id=session_id):
-        response = agent.invoke({"messages": messages})
+    response = agent.invoke({"messages": messages})
     messages = response["messages"]
     print(f"\nAssistant: {messages[-1].content}\n")
+
+    usage = messages[-1].usage_metadata
+
+    table.append({
+        "Question": user_input[:60] + "...",
+        "Answer": messages[-1].content[:80] + "...",
+        "Input Tokens": usage["input_tokens"],
+        "Output Tokens": usage["output_tokens"],
+        "Total Tokens": usage["total_tokens"]
+    })
+
+print(tabulate(table, headers="keys", tablefmt="grid"))
