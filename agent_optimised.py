@@ -1,14 +1,13 @@
 """
-agent_naive.py
+agent_optimised.py
 ______________
 
-A langgraph customer support agent with no context engineering principles applied. This means
+A langgraph customer support agent with clear context engineering applied. This means
 
-1. Vague System Prompt
-2. No clear message trimming strategy
-3. No clear retreival strategy
-4. Prompt not formatted clearly
-5. No capping of tool outputs
+1. Clear & Structured System Prompt
+2. Message trimming by relevance
+3. Retrieval optimised for relevance
+5. Capped tool outputs
 """
 
 from pathlib import Path
@@ -19,10 +18,28 @@ import sqlite3
 from typing import List
 import re
 from tabulate import tabulate
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DATA_PATH = Path(__file__).parent / "data"
 DB_PATH = DATA_PATH / "ecommerce.db"
 POLICY_DOCUMENT_PATH = DATA_PATH / "policy_document.txt"
+INDEX_PATH = DATA_PATH / "policy_index"
+
+embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004", vertexai=True)
+
+if INDEX_PATH.exists():
+    vectorstore = FAISS.load_local(str(INDEX_PATH), embeddings, allow_dangerous_deserialization=True)
+else:
+    with open(POLICY_DOCUMENT_PATH) as f:
+        text = f.read()
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    chunks = splitter.split_text(text)
+    vectorstore = FAISS.from_texts(chunks, embeddings)
+    vectorstore.save_local(str(INDEX_PATH))
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
 @tool
 def lookup_order(order_id: str) -> dict:
@@ -71,23 +88,10 @@ def find_product(query_term: str) -> List[dict]:
 
 
 @tool
-def search_policy(query: str) -> List[str]:
-    """Search policy document for sections of document relevant to user query"""
-    top_n = 3
-    query_words = re.split("[\s\.,]", query)
-    document_sections = []
-    with open(POLICY_DOCUMENT_PATH, "r") as f:
-        all_content = f.read(-1)
-        document_sections = re.split(r'(?=SECTION \d+:)', all_content) # split out each section
-        document_sections = [s.strip() for s in document_sections if s.strip()]
-    section_scores = []
-    for section in document_sections:
-        section_words = re.split("[\s\.,]", section)
-        score = len(set(section_words).intersection(query_words))
-        section_scores.append((section, score))
-    section_scores = [section for section in section_scores if section[1] != 0]
-    top_section = list(sorted(section_scores, key=lambda x: x[1], reverse=True))[:top_n]
-    return "\n-----\n".join([c[0] for c in top_section])
+def search_policy(query: str) -> str:
+    """Search policy document for information relevant to the query."""
+    docs = retriever.invoke(query)
+    return "\n\n---\n\n".join(d.page_content for d in docs)
 
 tools = [search_policy, find_product, lookup_order]
 
