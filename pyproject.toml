@@ -11,6 +11,5 @@ dependencies = [
     "langchain-google-genai>=4.2.4",
     "langchain-google-vertexai>=3.2.3",
     "langchain-text-splitters>=1.1.2",
-    "langgraph>=1.2.4",
     "tabulate>=0.10.0",
 ]
