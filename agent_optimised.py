@@ -117,13 +117,16 @@ messages = []
 
 table = []
 
+def trim_history(messages: list) -> list:
+    return [m for m in messages if m.type in ("human", "ai")]
+
 while True:
     user_input = input("You: ").strip()
     if user_input.lower() == "quit":
         break
     messages.append({"role": "user", "content": user_input})
     response = agent.invoke({"messages": messages})
-    messages = response["messages"]
+    messages = trim_history(response["messages"])
     print(f"\nAssistant: {messages[-1].content}\n")
 
     usage = messages[-1].usage_metadata
