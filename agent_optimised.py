@@ -49,15 +49,15 @@ def lookup_order(order_id: str) -> dict:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
         # get order details such as customer name, address etc.
-        cur.execute("SELECT * FROM orders where order_id=?", (order_id,))
+        cur.execute("SELECT order_id, customer_name, order_status, order_date, shipping_method  FROM orders where order_id=?", (order_id,))
         rows = cur.fetchall()
         tool_result["order_details"] = [dict(r) for r in rows]
         # get shipment details for the order
-        cur.execute("SELECT * FROM shipments WHERE order_id=?", (order_id,))
+        cur.execute("SELECT carrier, tracking_number, status, estimated_delivery, delay_reason FROM shipments WHERE order_id=?", (order_id,))
         rows = cur.fetchall()
         tool_result["shipment_details"] = [dict(r) for r in rows]
         # get full list of order items
-        cur.execute("SELECT * FROM order_items WHERE order_id=?", (order_id,))
+        cur.execute("SELECT product_name, quantity, unit_price FROM order_items WHERE order_id=?", (order_id,))
         rows = cur.fetchall()
         tool_result["order_items"] = [dict(r) for r in rows]
     return tool_result
@@ -71,7 +71,7 @@ def find_product(query_term: str) -> List[dict]:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
         find_query = """
-        SELECT * FROM products
+        SELECT name, description, price, warranty_months, average_rating, color FROM products
         WHERE
         LOWER(description) LIKE ?
         OR 
